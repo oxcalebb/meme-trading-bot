@@ -42,121 +42,101 @@ class BotHandlers {
         this.userStates.set(userId, { action: 'awaiting_ca' });
     }
 
-    async handleAnalyze(ctx) {
-        await ctx.reply(
-            `🔍 Analyze Pump.fun Token\n\n` +
-            `Enter the Pump.fun token Contract Address for detailed analysis:`
-        );
-        this.userStates.set(ctx.from.id, { action: 'awaiting_analysis_ca' });
+    async handleSell(ctx) {
+        const user = this.trading.db.getUser(ctx.from.id);
+        if (!user || user.positions.length === 0) {
+            await ctx.reply('❌ No positions to sell. Use /buy to create positions first.');
+            return;
+        }
+
+        let message = `💰 Your Positions:\n\n`;
+        user.positions.forEach((position, index) => {
+            const pnlIcon = position.pnl >= 0 ? '🟢' : '🔴';
+            message += `${index + 1}. ${position.tokenName}\n`;
+            message += `   📍 CA: ${position.tokenCA.substring(0, 8)}...\n`;
+            message += `   📦 Amount: ${position.amount.toFixed(2)}\n`;
+            message += `   💰 Current Value: ${position.currentValue.toFixed(2)} SOL\n`;
+            message += `   ${pnlIcon} P&L: ${position.pnl.toFixed(2)} SOL (${position.pnlPercent.toFixed(2)}%)\n\n`;
+        });
+
+        message += `📝 Reply with the position number to sell (1, 2, 3, etc.):`;
+
+        await ctx.reply(message);
+        this.userStates.set(ctx.from.id, { action: 'awaiting_sell_choice' });
     }
 
-    // Update the CA input handler with improved error messages
-    async handleCAInput(ctx, ca) {
+    async handleSellChoice(ctx, choice) {
         try {
-            if (ca.length < 32 || !this.isValidSolanaAddress(ca)) {
-                throw new Error('Invalid Solana contract address format. Please check and try again.');
+            const user = this.trading.db.getUser(ctx.from.id);
+            if (!user) {
+                throw new Error('User not found');
             }
 
-            await ctx.reply('🔍 Verifying token across multiple platforms...');
+            const positionIndex = parseInt(choice) - 1;
 
-            const tokenInfo = await this.trading.startBuyProcess(ctx.from.id, ca);
-
-            let tokenMessage = `✅ Token Verified on ${tokenInfo.source.toUpperCase()}!\n\n`;
-
-            tokenMessage += `🪙 ${tokenInfo.name} (${tokenInfo.symbol})\n`;
-            tokenMessage += `💰 Price: $${tokenInfo.price.toFixed(8)}\n`;
-            tokenMessage += `🏢 Market Cap: $${this.formatNumber(tokenInfo.marketCap)}\n`;
-
-            if (tokenInfo.volume > 0) {
-                tokenMessage += `📊 24h Volume: $${this.formatNumber(tokenInfo.volume)}\n`;
+            if (isNaN(positionIndex) || positionIndex < 0 || positionIndex >= user.positions.length) {
+                throw new Error('Invalid position number. Please select a valid number from the list.');
             }
 
-            if (tokenInfo.liquidity > 0) {
-                tokenMessage += `💧 Liquidity: $${this.formatNumber(tokenInfo.liquidity)}\n`;
-            }
+            const position = user.positions[positionIndex];
 
-            if (tokenInfo.priceChange !== 0) {
-                tokenMessage += `📈 24h Change: ${tokenInfo.priceChange.toFixed(2)}%\n`;
-            }
+            // Ask for sell percentage
+            await ctx.reply(
+                `🪙 Selling: ${position.tokenName}\n` +
+                `📦 Available: ${position.amount.toFixed(2)}\n\n` +
+                `Enter percentage to sell (1-100):\n` +
+                `💡 Example: 50 for 50%, 100 for everything`
+            );
 
-            // Add Pump.fun specific info
-            if (tokenInfo.source === 'pump.fun') {
-                tokenMessage += `🚀 **Pump.fun Token**\n`;
-                if (tokenInfo.bondCurvePrice) {
-                    tokenMessage += `📊 Bond Curve: $${tokenInfo.bondCurvePrice.toFixed(8)}\n`;
-                }
-
-                // Add quick analysis
-                try {
-                    const analysis = await this.trading.analyzePumpFunToken(ca);
-                    if (analysis.analysis) {
-                        tokenMessage += `\n${analysis.analysis}\n`;
-                    }
-                } catch (analysisError) {
-                    // Skip analysis if it fails
-                }
-            }
-
-            tokenMessage += `\n💎 Enter the amount of SOL to invest:`;
-
-            await ctx.reply(tokenMessage);
-            this.userStates.set(ctx.from.id, { action: 'awaiting_buy_amount' });
+            this.userStates.set(ctx.from.id, {
+                action: 'awaiting_sell_percentage',
+                selectedPosition: position.tokenCA
+            });
 
         } catch (error) {
-            let errorMessage = `❌ Token verification failed: ${error.message}\n\n`;
-            errorMessage += `💡 Possible reasons:\n`;
-            errorMessage += `• Token is too new (wait 5-10 minutes)\n`;
-            errorMessage += `• No liquidity on DEXs\n`;
-            errorMessage += `• Invalid contract address\n`;
-            errorMessage += `• API temporarily unavailable\n\n`;
-            errorMessage += `🔄 Try again in a few minutes or use a different token.`;
-
-            await ctx.reply(errorMessage);
+            await ctx.reply(`❌ Error: ${error.message}`);
             this.userStates.delete(ctx.from.id);
         }
     }
 
-    // Add analysis handler
-    async handleAnalysisCA(ctx, ca) {
+    async handleSellPercentage(ctx, percentageText) {
         try {
-            if (ca.length < 32 || !this.isValidSolanaAddress(ca)) {
-                throw new Error('Invalid Solana contract address format. Please check and try again.');
+            const percentage = parseFloat(percentageText);
+            const userState = this.userStates.get(ctx.from.id);
+
+            if (!userState || !userState.selectedPosition) {
+                throw new Error('No position selected. Please start over with /sell');
             }
 
-            await ctx.reply('🔍 Analyzing Pump.fun token...');
-
-            const analysis = await this.trading.analyzePumpFunToken(ca);
-
-            let analysisMessage = `📊 Pump.fun Token Analysis\n\n`;
-            analysisMessage += `🪙 ${analysis.tokenInfo.name} (${analysis.tokenInfo.symbol})\n`;
-            analysisMessage += `📍 CA: ${ca.substring(0, 12)}...\n\n`;
-            analysisMessage += `💰 Price: $${analysis.tokenInfo.price.toFixed(8)}\n`;
-            analysisMessage += `🏢 Market Cap: $${this.formatNumber(analysis.tokenInfo.marketCap)}\n`;
-            analysisMessage += `💧 Liquidity: $${this.formatNumber(analysis.tokenInfo.liquidity)}\n\n`;
-
-            if (analysis.analysis) {
-                analysisMessage += `${analysis.analysis}\n\n`;
+            if (isNaN(percentage) || percentage <= 0 || percentage > 100) {
+                throw new Error('Please enter a valid percentage between 1 and 100');
             }
 
-            analysisMessage += `🛒 Use /buy to purchase this token`;
+            await ctx.reply('🔄 Executing sell order...');
 
-            await ctx.reply(analysisMessage);
+            const result = await this.trading.sellPosition(
+                ctx.from.id,
+                userState.selectedPosition,
+                percentage
+            );
+
+            const successMessage =
+                `✅ Sell Order Executed!\n\n` +
+                `💰 Received: ${result.solReceived.toFixed(2)} SOL\n` +
+                `📦 Sold: ${result.soldAmount.toFixed(2)} tokens\n` +
+                `💹 P&L: ${result.pnl.toFixed(2)} SOL\n` +
+                `🏦 New Balance: ${this.trading.db.getUser(ctx.from.id).demoBalance.SOL.toFixed(2)} SOL\n\n` +
+                `📊 Check your /positions`;
+
+            await ctx.reply(successMessage);
             this.userStates.delete(ctx.from.id);
 
         } catch (error) {
-            let errorMessage = `❌ Analysis failed: ${error.message}\n\n`;
-            errorMessage += `💡 Possible reasons:\n`;
-            errorMessage += `• Token not found on Pump.fun\n`;
-            errorMessage += `• Token is too new\n`;
-            errorMessage += `• API temporarily unavailable\n\n`;
-            errorMessage += `🔄 Try a different token or check the contract address.`;
-
-            await ctx.reply(errorMessage);
+            await ctx.reply(`❌ Sell failed: ${error.message}`);
             this.userStates.delete(ctx.from.id);
         }
     }
 
-    // Update positions display to show source
     async handlePositions(ctx) {
         const user = this.trading.db.getUser(ctx.from.id);
         if (!user) {
@@ -175,6 +155,7 @@ class BotHandlers {
         } else {
             portfolio.positions.forEach(position => {
                 const sourceIcon = position.isPumpFun ? '🚀' : '🔄';
+                const pnlIcon = position.pnl >= 0 ? '🟢' : '🔴';
                 message += `${sourceIcon} ${position.tokenName}\n`;
                 message += `   📍 CA: ${position.tokenCA.substring(0, 12)}...\n`;
                 message += `   📦 Amount: ${position.amount.toFixed(2)}\n`;
@@ -186,7 +167,6 @@ class BotHandlers {
                     message += `   📊 Volume: $${this.formatNumber(position.volume)}\n`;
                 }
 
-                const pnlIcon = position.pnl >= 0 ? '🟢' : '🔴';
                 message += `   ${pnlIcon} P&L: ${position.pnl.toFixed(2)} SOL (${position.pnlPercent.toFixed(2)}%)\n\n`;
             });
         }
@@ -227,10 +207,119 @@ class BotHandlers {
 
     async handleRefresh(ctx) {
         await ctx.reply('🔄 Refreshing portfolio...');
-        await this.handlePositions(ctx); // This will refresh and show positions
+        await this.handlePositions(ctx);
     }
 
-    // Update text message handler to include analysis
+    async handleAnalyze(ctx) {
+        await ctx.reply(
+            `🔍 Analyze Pump.fun Token\n\n` +
+            `Enter the Pump.fun token Contract Address for detailed analysis:`
+        );
+        this.userStates.set(ctx.from.id, { action: 'awaiting_analysis_ca' });
+    }
+
+    async handleCAInput(ctx, ca) {
+        try {
+            if (ca.length < 32 || !this.isValidSolanaAddress(ca)) {
+                throw new Error('Invalid Solana contract address format. Please check and try again.');
+            }
+
+            await ctx.reply('🔍 Verifying token across multiple platforms...');
+
+            const tokenInfo = await this.trading.startBuyProcess(ctx.from.id, ca);
+
+            let tokenMessage = `✅ Token Verified on ${tokenInfo.source.toUpperCase()}!\n\n`;
+
+            tokenMessage += `🪙 ${tokenInfo.name} (${tokenInfo.symbol})\n`;
+            tokenMessage += `💰 Price: $${tokenInfo.price.toFixed(8)}\n`;
+            tokenMessage += `🏢 Market Cap: $${this.formatNumber(tokenInfo.marketCap)}\n`;
+
+            if (tokenInfo.volume > 0) {
+                tokenMessage += `📊 24h Volume: $${this.formatNumber(tokenInfo.volume)}\n`;
+            }
+
+            if (tokenInfo.liquidity > 0) {
+                tokenMessage += `💧 Liquidity: $${this.formatNumber(tokenInfo.liquidity)}\n`;
+            }
+
+            if (tokenInfo.priceChange !== 0) {
+                tokenMessage += `📈 24h Change: ${tokenInfo.priceChange.toFixed(2)}%\n`;
+            }
+
+            if (tokenInfo.source === 'pump.fun') {
+                tokenMessage += `🚀 **Pump.fun Token**\n`;
+                if (tokenInfo.bondCurvePrice) {
+                    tokenMessage += `📊 Bond Curve: $${tokenInfo.bondCurvePrice.toFixed(8)}\n`;
+                }
+
+                try {
+                    const analysis = await this.trading.analyzePumpFunToken(ca);
+                    if (analysis.analysis) {
+                        tokenMessage += `\n${analysis.analysis}\n`;
+                    }
+                } catch (analysisError) {
+                    // Skip analysis if it fails
+                }
+            }
+
+            tokenMessage += `\n💎 Enter the amount of SOL to invest:`;
+
+            await ctx.reply(tokenMessage);
+            this.userStates.set(ctx.from.id, { action: 'awaiting_buy_amount' });
+
+        } catch (error) {
+            let errorMessage = `❌ Token verification failed: ${error.message}\n\n`;
+            errorMessage += `💡 Possible reasons:\n`;
+            errorMessage += `• Token is too new (wait 5-10 minutes)\n`;
+            errorMessage += `• No liquidity on DEXs\n`;
+            errorMessage += `• Invalid contract address\n`;
+            errorMessage += `• API temporarily unavailable\n\n`;
+            errorMessage += `🔄 Try again in a few minutes or use a different token.`;
+
+            await ctx.reply(errorMessage);
+            this.userStates.delete(ctx.from.id);
+        }
+    }
+
+    async handleAnalysisCA(ctx, ca) {
+        try {
+            if (ca.length < 32 || !this.isValidSolanaAddress(ca)) {
+                throw new Error('Invalid Solana contract address format. Please check and try again.');
+            }
+
+            await ctx.reply('🔍 Analyzing Pump.fun token...');
+
+            const analysis = await this.trading.analyzePumpFunToken(ca);
+
+            let analysisMessage = `📊 Pump.fun Token Analysis\n\n`;
+            analysisMessage += `🪙 ${analysis.tokenInfo.name} (${analysis.tokenInfo.symbol})\n`;
+            analysisMessage += `📍 CA: ${ca.substring(0, 12)}...\n\n`;
+            analysisMessage += `💰 Price: $${analysis.tokenInfo.price.toFixed(8)}\n`;
+            analysisMessage += `🏢 Market Cap: $${this.formatNumber(analysis.tokenInfo.marketCap)}\n`;
+            analysisMessage += `💧 Liquidity: $${this.formatNumber(analysis.tokenInfo.liquidity)}\n\n`;
+
+            if (analysis.analysis) {
+                analysisMessage += `${analysis.analysis}\n\n`;
+            }
+
+            analysisMessage += `🛒 Use /buy to purchase this token`;
+
+            await ctx.reply(analysisMessage);
+            this.userStates.delete(ctx.from.id);
+
+        } catch (error) {
+            let errorMessage = `❌ Analysis failed: ${error.message}\n\n`;
+            errorMessage += `💡 Possible reasons:\n`;
+            errorMessage += `• Token not found on Pump.fun\n`;
+            errorMessage += `• Token is too new\n`;
+            errorMessage += `• API temporarily unavailable\n\n`;
+            errorMessage += `🔄 Try a different token or check the contract address.`;
+
+            await ctx.reply(errorMessage);
+            this.userStates.delete(ctx.from.id);
+        }
+    }
+
     async handleTextMessage(ctx) {
         const userId = ctx.from.id;
         const text = ctx.message.text;
@@ -249,6 +338,9 @@ class BotHandlers {
                 case 'awaiting_sell_choice':
                     await this.handleSellChoice(ctx, text);
                     break;
+                case 'awaiting_sell_percentage':
+                    await this.handleSellPercentage(ctx, text);
+                    break;
                 case 'awaiting_deposit':
                     await this.handleDepositAmount(ctx, text);
                     break;
@@ -260,15 +352,11 @@ class BotHandlers {
                     break;
             }
         } catch (error) {
-            let errorMessage = `❌ Error: ${error.message}\n\n`;
-            errorMessage += `🔄 Please try the command again.`;
-
-            await ctx.reply(errorMessage);
+            await ctx.reply(`❌ Error: ${error.message}`);
             this.userStates.delete(userId);
         }
     }
 
-    // Update buy completion to show source
     async handleBuyAmount(ctx, amountText) {
         const amount = parseFloat(amountText);
         if (isNaN(amount) || amount <= 0) {
@@ -328,13 +416,6 @@ class BotHandlers {
         this.userStates.delete(ctx.from.id);
     }
 
-    async handleSellChoice(ctx, choice) {
-        // Implementation for selling specific positions
-        await ctx.reply('🔧 Sell functionality being implemented...');
-        this.userStates.delete(ctx.from.id);
-    }
-
-    // Utility function to format large numbers
     formatNumber(num) {
         if (!num || num === 0) return '0';
         if (num >= 1000000) {
@@ -345,9 +426,7 @@ class BotHandlers {
         return num.toFixed(2);
     }
 
-    // Helper function to validate Solana addresses
     isValidSolanaAddress(address) {
-        // Basic Solana address validation
         return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
     }
 }
