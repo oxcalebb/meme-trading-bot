@@ -4,16 +4,17 @@ primary_region = "ord"
 [build]
   builder = "paketobuildpacks/builder:base"
 
+[env]
+  PORT = "8080"
+
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = true
-  auto_start_machines = true
 
 [[http_checks]]
-  interval = "1m"
+  interval = "30s"
   grace_period = "10s"
   method = "get"
   path = "/health"
   protocol = "http"
-  timeout = "2s"
+  timeout = "5s"
