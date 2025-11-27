@@ -8,12 +8,18 @@ const BotHandlers = require('./botHandlers');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
+// Validate environment variables
+if (!BOT_TOKEN) {
+    console.error('❌ BOT_TOKEN is required');
+    process.exit(1);
+}
+
 // Create web server for health checks
-const webApp = express();
-const PORT = 8080;  // Fly.io requires port 8080
+const app = express();
+const PORT = 8080;  // FLY.IO REQUIRES PORT 8080
 
 // Health check endpoint
-webApp.get('/health', (req, res) => {
+app.get('/health', (req, res) => {
     res.status(200).json({
         status: 'OK',
         timestamp: new Date().toISOString(),
@@ -21,9 +27,14 @@ webApp.get('/health', (req, res) => {
     });
 });
 
-// Start web server - FIXED for Fly.io
-webApp.listen(PORT, '0.0.0.0', () => {
-    console.log('🌐 Health check server running on port 8080');
+// Root endpoint
+app.get('/', (req, res) => {
+    res.send('🤖 Meme Trading Bot is running!');
+});
+
+// START SERVER - THIS IS THE CRITICAL FIX
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
 });
 
 class MemeCoinTradingBot {
@@ -72,12 +83,14 @@ class MemeCoinTradingBot {
     async start() {
         try {
             await this.bot.launch();
-            console.log('🤖 Meme Coin Trading Bot is running on Fly.io!');
+            console.log('🤖 Meme Coin Trading Bot is running!');
         } catch (error) {
             console.error('❌ Failed to start bot:', error);
         }
     }
 }
 
+// Start the bot
+console.log('🚀 Starting bot...');
 const tradingBot = new MemeCoinTradingBot();
 tradingBot.start();
