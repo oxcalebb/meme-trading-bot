@@ -2,7 +2,7 @@ app = "meme-trading-bot"
 primary_region = "ord"
 
 [build]
-  builder = "heroku/buildpacks:20"
+  builder = "paketobuildpacks/builder:base"
 
 [http_service]
   internal_port = 8080
