@@ -6,17 +6,12 @@ const PriceService = require('./priceService');
 const TradingEngine = require('./tradingEngine');
 const BotHandlers = require('./botHandlers');
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
-
-// Validate environment variables
-if (!BOT_TOKEN) {
-    console.error('❌ BOT_TOKEN is required');
-    process.exit(1);
-}
+// YOUR BOT TOKEN HARDCODED
+const BOT_TOKEN = '7670481860:AAGKOPXpw0Se76gjTgmyem6UbWkXqRK-T_c';
 
 // Create web server for health checks
 const app = express();
-const PORT = 8080;  // FLY.IO REQUIRES PORT 8080
+const PORT = 8080;
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -32,9 +27,9 @@ app.get('/', (req, res) => {
     res.send('🤖 Meme Trading Bot is running!');
 });
 
-// START SERVER - THIS IS THE CRITICAL FIX
-const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
+// START SERVER
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Server running on port ${PORT}`);
 });
 
 class MemeCoinTradingBot {
